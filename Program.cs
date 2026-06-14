@@ -40,7 +40,7 @@ app.MapGet("/", () => Results.Ok(new
     players = sessions.Sum(kv => kv.Value.Count)
 }));
 
-app.MapGet("/api", (HttpRequest req) =>
+var HandleApi = (HttpRequest req) =>
 {
     var gameId = req.Query["game_id"].FirstOrDefault();
     if (string.IsNullOrEmpty(gameId))
@@ -137,7 +137,10 @@ app.MapGet("/api", (HttpRequest req) =>
     }
 
     return Results.Ok(new { players, chat });
-});
+};
+
+app.MapGet("/api", HandleApi);
+app.MapGet("/api/games/multiplayer.php", HandleApi);
 
 app.Run();
 

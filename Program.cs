@@ -55,8 +55,14 @@ var HandleApi = (HttpRequest req) =>
 
     var game = sessions[gameId];
 
+    bool isSwinging = ParseInt(req.Query["swinging"], 0) != 0;
+    int swingId = ParseInt(req.Query["swing_id"], 0);
+
     if (!string.IsNullOrEmpty(username) && req.Query.ContainsKey("pos_x"))
     {
+        var prevData = game.GetValueOrDefault(username);
+        var hitList = (prevData != null && prevData.SwingId == swingId) ? prevData.HitPlayers : new List<string>();
+
         game[username] = new PlayerData
         {
             PosX = ParseFloat(req.Query["pos_x"]),
@@ -76,6 +82,15 @@ var HandleApi = (HttpRequest req) =>
             IsAdmin = ParseInt(req.Query["is_admin"], 0),
             HatColor = req.Query["hat_color"].FirstOrDefault() ?? "",
             WearingHair = ParseInt(req.Query["wearing_hair"], 0),
+            Swinging = isSwinging ? 1 : 0,
+            SwingMinX = ParseFloat(req.Query["swing_min_x"]),
+            SwingMinY = ParseFloat(req.Query["swing_min_y"]),
+            SwingMinZ = ParseFloat(req.Query["swing_min_z"]),
+            SwingMaxX = ParseFloat(req.Query["swing_max_x"]),
+            SwingMaxY = ParseFloat(req.Query["swing_max_y"]),
+            SwingMaxZ = ParseFloat(req.Query["swing_max_z"]),
+            SwingId = swingId,
+            HitPlayers = hitList,
             Time = now
         };
     }
@@ -120,8 +135,32 @@ var HandleApi = (HttpRequest req) =>
                 wearing_hat = v.WearingHat,
                 is_admin = v.IsAdmin,
                 hat_color = v.HatColor,
-                wearing_hair = v.WearingHair
+                wearing_hair = v.WearingHair,
+                swinging = v.Swinging
             });
+        }
+    }
+
+    // Sword hit detection: check if any swinging player's blade hits the requester
+    string hitBy = "";
+    if (!string.IsNullOrEmpty(username) && game.TryGetValue(username, out var requester))
+    {
+        foreach (var (k, v) in game)
+        {
+            if (k == username) continue;
+            if (v.Swinging == 0) continue;
+            if (now - v.Time > PlayerVisibleTime) continue;
+            if (v.HitPlayers.Contains(username)) continue;
+
+            float px = requester.PosX, py = requester.PosY, pz = requester.PosZ;
+            if (px >= v.SwingMinX && px <= v.SwingMaxX &&
+                py >= v.SwingMinY && py <= v.SwingMaxY &&
+                pz >= v.SwingMinZ && pz <= v.SwingMaxZ)
+            {
+                hitBy = k;
+                v.HitPlayers.Add(username);
+                break;
+            }
         }
     }
 
@@ -136,7 +175,7 @@ var HandleApi = (HttpRequest req) =>
         }
     }
 
-    return Results.Ok(new { players, chat });
+    return Results.Ok(new { players, chat, hit_by = hitBy });
 };
 
 app.MapGet("/api", HandleApi);
@@ -200,6 +239,10 @@ record PlayerData
     public int WearingHat, IsAdmin, WearingHair;
     public string HatColor = "";
     public long Time;
+    public int Swinging;
+    public float SwingMinX, SwingMinY, SwingMinZ, SwingMaxX, SwingMaxY, SwingMaxZ;
+    public int SwingId;
+    public List<string> HitPlayers = new();
 }
 
 record ChatMessage
